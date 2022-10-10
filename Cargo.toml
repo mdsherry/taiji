@@ -1,0 +1,15 @@
+[package]
+name = "taiji"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = { version = "0.4.22", features = ["std", "clock"], default-features = false }
+clap = { version = "4.0.9", features = ["derive"] }
+crossterm = "0.25.0"
+hyphenation = { version = "0.8.4", features = ["embed_en-us"] }
+paragraph-breaker = "0.4.4"
+thiserror = "1.0.37"
+tui = "0.19.0"
