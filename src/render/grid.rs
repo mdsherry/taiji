@@ -9,13 +9,23 @@ use tui::{
 
 use crate::{
     panel::{self, Panel, Symbol},
-    Grid, ROTATIONS,
+    Gridlike, ROTATIONS, grid::PanelLoc,
 };
 
-impl StatefulWidget for &Grid {
+pub struct GridRenderer<'a, G> {
+    grid: &'a G
+}
+
+impl<'a, G> GridRenderer<'a, G> where G: Gridlike<'a> {
+    pub fn new(grid: &'a G) -> Self {
+        GridRenderer { grid }
+    }
+}
+
+impl<'a, G: Gridlike<'a>> StatefulWidget for GridRenderer<'a, G> {
     fn render(
         self,
-        mut area: Rect,
+        area: Rect,
         buf: &mut Buffer,
         (cx, cy, tagged, error_locs): &mut Self::State,
     ) {
@@ -25,33 +35,33 @@ impl StatefulWidget for &Grid {
         
         let panels_visible_wide = (area.width - 1) / PANEL_WIDTH;
         let panels_visible_high = (area.height - 1) / PANEL_WIDTH;
-        let start_x = if panels_visible_wide < self.width as u16 {
+        let start_x = if panels_visible_wide < self.grid.width() as u16 {
             cx.saturating_sub((panels_visible_wide / 2) as usize)
         } else {
             0
         };
         
-        let start_y = if panels_visible_high < self.height as u16 {
+        let start_y = if panels_visible_high < self.grid.height() as u16 {
             cy.saturating_sub((panels_visible_high / 2) as usize)
         } else {
             0
         };
-        let cotagged = self.get_cotagged(tagged);
-        for x in (start_x as u16)..self.width as u16 {
+        let cotagged = get_cotagged(self.grid, tagged);
+        for x in (start_x as u16)..self.grid.width() as u16 {
             if x - start_x as u16 >= panels_visible_wide { 
                 break;
             }
-            buf.get_mut(1 + (x - start_x as u16) * PANEL_WIDTH + area.left() + PANEL_WIDTH / 2, area.top()).symbol = x.to_string();
+            buf.get_mut(1 + (x - start_x as u16) * PANEL_WIDTH + area.left() + PANEL_WIDTH / 2, area.top()).symbol = (x + 1).to_string();
         }
         
-        for y in (start_y as u16)..self.height as u16 {
+        for y in (start_y as u16)..self.grid.height() as u16 {
             if y - start_y as u16 >= panels_visible_high { 
                 break;
             }
-            buf.get_mut(area.left(), 1 + (y - start_y as u16) * PANEL_HEIGHT + area.top() + PANEL_HEIGHT / 2).symbol = y.to_string();
+            buf.get_mut(area.left(), 1 + (y - start_y as u16) * PANEL_HEIGHT + area.top() + PANEL_HEIGHT / 2).symbol = ((b'A' + y as u8) as char).to_string();
         }
         
-        for (x, y, panel) in self.iter() {
+        for (x, y, panel) in self.grid.iter() {
             if x < start_x || y < start_y {
                 continue;
             }
@@ -64,10 +74,10 @@ impl StatefulWidget for &Grid {
             if rect_intersect(rect, area) == rect {
                 render_panel(
                     x == *cx && y == *cy,
-                    error_locs.contains(&(x, y)),
+                    error_locs.contains(&PanelLoc { x, y }),
                     tagged.contains(&(x, y)),
                     cotagged.contains(&(x, y)),
-                    *panel,
+                    panel,
                     rect,
                     buf,
                 )
@@ -79,57 +89,57 @@ impl StatefulWidget for &Grid {
         usize,
         usize,
         HashSet<(usize, usize)>,
-        HashSet<(usize, usize)>,
+        HashSet<PanelLoc>,
     );
 }
 
-impl Grid {
-    fn get_cotagged(&self, tagged: &mut HashSet<(usize, usize)>) -> Vec<(usize, usize)> {
-        let mut cotagged = vec![];
-        for &(tx, ty) in tagged.iter() {
-            let tagged_neighbourhood = self.neighbourhood(tx, ty);
-            for (ox, oy, panel) in tagged_neighbourhood.contents {
-                if let Symbol::Line { diagonal, color } = panel.symbol {
-                    let lx = (ox + tagged_neighbourhood.offset_x as i8) as usize;
-                    let ly = (oy + tagged_neighbourhood.offset_y as i8) as usize;
-                    // Find every other line of the same colour, and tag the corresponding location
-                    let l_neigh = self.neighbourhood(lx, ly);
-                    let rx = tx as i32 - lx as i32;
-                    let ry = ty as i32 - ly as i32;
-                    for (xx, yy, opanel) in self.iter() {
-                        if xx == lx && yy == ly {
+
+fn get_cotagged<'a, G: Gridlike<'a>>(grid: &'a G, tagged: &mut HashSet<(usize, usize)>) -> Vec<(usize, usize)> {
+    let mut cotagged = vec![];
+    for &(tx, ty) in tagged.iter() {
+        let tagged_neighbourhood = grid.neighbourhood(tx, ty);
+        for (ox, oy, panel) in tagged_neighbourhood.contents {
+            if let Symbol::Line { diagonal, color } = panel.symbol {
+                let lx = (ox + tagged_neighbourhood.offset_x as i8) as usize;
+                let ly = (oy + tagged_neighbourhood.offset_y as i8) as usize;
+                // Find every other line of the same colour, and tag the corresponding location
+                let l_neigh = grid.neighbourhood(lx, ly);
+                let rx = tx as i32 - lx as i32;
+                let ry = ty as i32 - ly as i32;
+                for (xx, yy, opanel) in grid.iter() {
+                    if xx == lx && yy == ly {
+                        continue;
+                    }
+                    if let Symbol::Line { diagonal: odiagonal, color: ocolor } = opanel.symbol {
+                        if color != ocolor {
                             continue;
                         }
-                        if let Symbol::Line { diagonal: odiagonal, color: ocolor } = opanel.symbol {
-                            if color != ocolor {
-                                continue;
+                        if diagonal || odiagonal {
+                            // Find the most likely rotation
+                            let oneigh = grid.neighbourhood(xx, yy);
+                            let rot = ROTATIONS.into_iter().max_by_key(|rot| l_neigh.rotated_overlap(&oneigh, *rot)).unwrap();
+                    
+                            let (rx, ry) = rot.rotate((rx as i8, ry as i8));
+                            let olx = xx as i32 + rx as i32;
+                            let oly = yy as i32 + ry as i32;
+                            if olx >= 0 && olx < grid.width() as i32 && oly >= 0 && oly < grid.height() as i32 {
+                                cotagged.push((olx as usize, oly as usize));
                             }
-                            if diagonal || odiagonal {
-                                // Find the most likely rotation
-                                let oneigh = self.neighbourhood(xx, yy);
-                                let rot = ROTATIONS.into_iter().max_by_key(|rot| l_neigh.rotated_overlap(&oneigh, *rot)).unwrap();
-                        
-                                let (rx, ry) = rot.rotate((rx as i8, ry as i8));
-                                let olx = xx as i32 + rx as i32;
-                                let oly = yy as i32 + ry as i32;
-                                if olx >= 0 && olx < self.width as i32 && oly >= 0 && oly < self.height as i32 {
-                                    cotagged.push((olx as usize, oly as usize));
-                                }
-                            } else {
-                                let olx = xx as i32 + rx;
-                                let oly = yy as i32 + ry;
-                                if olx >= 0 && olx < self.width as i32 && oly >= 0 && oly < self.height as i32 {
-                                    cotagged.push((olx as usize, oly as usize));
-                                }
+                        } else {
+                            let olx = xx as i32 + rx;
+                            let oly = yy as i32 + ry;
+                            if olx >= 0 && olx < grid.width() as i32 && oly >= 0 && oly < grid.height() as i32 {
+                                cotagged.push((olx as usize, oly as usize));
                             }
                         }
                     }
                 }
             }
         }
-        cotagged
     }
+    cotagged
 }
+
 
 const PANEL_WIDTH: u16 = 5;
 const PANEL_HEIGHT: u16 = 5;
@@ -141,7 +151,7 @@ struct PanelColours {
     fg: Color
 }
 
-fn get_colours(cursor: bool, error: bool, tagged: bool, cotagged: bool, filled: bool) -> PanelColours {
+fn get_colours(cursor: bool, error: bool, _tagged: bool, _cotagged: bool, filled: bool) -> PanelColours {
     let border_bg = match (filled, cursor) {
         (true, true) => Color::DarkGray,
         (true, false) => Color::DarkGray,

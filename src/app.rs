@@ -1,21 +1,24 @@
-use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
-};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
-use std::{io, collections::{HashSet, HashMap}};
-use tui::{
-    backend::{Backend},
-    Terminal,
+use std::{
+    collections::HashSet,
+    io,
 };
+use tui::{backend::Backend, Terminal};
 
-use crate::{grid::{Grid, Rotation}, panel::{self, Symbol}, Args, render::ui};
+use crate::{
+    grid::{Grid2, Gridlike},
+    panel::{self, Symbol},
+    render::ui,
+    Args,
+};
 
 pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, args: Args) -> io::Result<()> {
     let mut grid = if let Some(in_path) = args.in_file {
         let s = std::fs::read_to_string(in_path)?;
         s.parse().unwrap()
     } else {
-        Grid::new(args.width, args.height)
+        Grid2::new(args.width, args.height)
     };
     let mut cx = 0;
     let mut cy = 0;
@@ -23,7 +26,17 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, args: Args) -> io::Result
     let mut cur_color = panel::Color::Yellow;
     let mut state_stack = vec![];
     loop {
-        terminal.draw(|f| ui(f, &mut grid, cx, cy, cur_color, state_stack.len(), tagged.clone()))?;
+        terminal.draw(|f| {
+            ui(
+                f,
+                &mut grid,
+                cx,
+                cy,
+                cur_color,
+                state_stack.len(),
+                tagged.clone(),
+            )
+        })?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
@@ -46,27 +59,12 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, args: Args) -> io::Result
                         grid = solution;
                     }
                 }
-                KeyCode::Char(n@'1'..='9') => {
+                KeyCode::Char(n @ '1'..='9') => {
                     let n = (n as u8 - b'1' + 1) as usize;
-                    match &mut grid.contents[cx][cy].symbol {
-                        Symbol::Plain | Symbol::Line {..} | Symbol::Lozange {..} => (),
-                        Symbol::Pips { count, ..} => *count = n as i8,
-                        Symbol::Petals { count } => *count = n.min(4),
-                    }
+                    grid.symbol_at_mut(cx, cy).map(|s| s.set_count(n as i8));
                 }
                 KeyCode::Tab => {
-                    let mut rv = grid.clone();
-                    let rot = if grid.width == grid.height { Rotation::D90 } else { Rotation::D180 };
-                    for (x, y, panel) in grid.iter() {
-                        let (nx, ny) = match rot {
-                            Rotation::D0 => (x, y),
-                            Rotation::D90 => (grid.width - 1 - y, x),
-                            Rotation::D180 => (grid.width - 1 - x, grid.height - 1 - y),
-                            Rotation::D270 => (y, grid.width - 1 - x),
-                        };
-                        rv.contents[nx as usize][ny as usize] = *panel;
-                    }
-                    grid = rv;
+                    grid.rotate();
                 }
                 KeyCode::Up => {
                     if cy > 0 {
@@ -74,7 +72,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, args: Args) -> io::Result
                     }
                 }
                 KeyCode::Down => {
-                    if cy + 1 < grid.height {
+                    if cy + 1 < grid.height() {
                         cy += 1;
                     }
                 }
@@ -84,54 +82,60 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, args: Args) -> io::Result
                     }
                 }
                 KeyCode::Right => {
-                    if cx + 1 < grid.width {
+                    if cx + 1 < grid.width() {
                         cx += 1;
                     }
                 }
                 KeyCode::Char(' ') => {
                     if key.modifiers.contains(KeyModifiers::SHIFT) {
-                        grid.contents[cx][cy].fixed = !grid.contents[cx][cy].fixed;
+                        grid.toggle_fixed_at(cx, cy);
                     } else {
-                        if !grid.contents[cx][cy].fixed {
-                            grid.contents[cx][cy].filled = !grid.contents[cx][cy].filled;
+                        if !grid.fixed_at(cx, cy) {
+                            grid.toggle_lit_at(cx, cy);
                         }
                     }
                 }
                 KeyCode::Char('r') => {
-                    for row in &mut grid.contents {
-                        for panel in row {
-                            if !panel.fixed {
-                                panel.filled = false;
-                            }
-                        }
-                    }
+                    grid.reset();
                 }
                 KeyCode::Char('.') => {
-                    grid.contents[cx][cy].symbol = Symbol::Plain;
+                    grid.set_symbol_at(cx, cy, Symbol::Plain);
                 }
                 KeyCode::Char('l') => {
-                    grid.contents[cx][cy].symbol = Symbol::Line {
-                        diagonal: false,
-                        color: cur_color,
-                    };
+                    grid.set_symbol_at(
+                        cx,
+                        cy,
+                        Symbol::Line {
+                            diagonal: false,
+                            color: cur_color,
+                        },
+                    );
                 }
                 KeyCode::Char('L') => {
-                    grid.contents[cx][cy].symbol = Symbol::Line {
-                        diagonal: true,
-                        color: cur_color,
-                    };
+                    grid.set_symbol_at(
+                        cx,
+                        cy,
+                        Symbol::Line {
+                            diagonal: true,
+                            color: cur_color,
+                        },
+                    );
                 }
                 KeyCode::Char('c' | 'C') => {
-                    grid.contents[cx][cy].symbol = Symbol::Pips {
-                        count: 1,
-                        color: cur_color,
-                    };
+                    grid.set_symbol_at(
+                        cx,
+                        cy,
+                        Symbol::Pips {
+                            count: 1,
+                            color: cur_color,
+                        },
+                    );
                 }
                 KeyCode::Char('f' | 'F') => {
-                    grid.contents[cx][cy].symbol = Symbol::Petals { count: 0 }
+                    grid.set_symbol_at(cx, cy, Symbol::Petals { count: 0 });
                 }
                 KeyCode::Char('o' | 'O') => {
-                    grid.contents[cx][cy].symbol = Symbol::Lozange { color: cur_color }
+                    grid.set_symbol_at(cx, cy, Symbol::Lozange { color: cur_color });
                 }
                 KeyCode::Char('[') => {
                     cur_color = cur_color.prev();
@@ -139,36 +143,12 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, args: Args) -> io::Result
                 KeyCode::Char(']') => {
                     cur_color = cur_color.next();
                 }
-                KeyCode::Char('+' | '=') => match &mut grid.contents[cx][cy].symbol {
-                    Symbol::Pips { count, .. } => {
-                        if *count != -1 {
-                            *count += 1;
-                        } else {
-                            *count = 1;
-                        }
-                    }
-                    Symbol::Petals { count, .. } => {
-                        if *count < 4 {
-                            *count += 1;
-                        }
-                    }
-                    _ => (),
-                },
-                KeyCode::Char('-') => match &mut grid.contents[cx][cy].symbol {
-                    Symbol::Pips { count, .. } => {
-                        if *count != 1 {
-                            *count -= 1;
-                        } else {
-                            *count = -1;
-                        }
-                    }
-                    Symbol::Petals { count, .. } => {
-                        if *count > 0 {
-                            *count -= 1;
-                        }
-                    }
-                    _ => (),
-                },
+                KeyCode::Char('+' | '=') => {
+                    grid.symbol_at_mut(cx, cy).map(|s| s.incr_count());
+                }
+                KeyCode::Char('-') => {
+                    grid.symbol_at_mut(cx, cy).map(|s| s.decr_count());
+                }
                 KeyCode::Char('x') => {
                     let out = grid.to_string();
                     if let Some(out_path) = args.out_file.as_ref() {

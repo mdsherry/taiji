@@ -1,12 +1,11 @@
 use hyphenation::Hyphenator;
 use paragraph_breaker::{Item, standard_fit};
-use thiserror::Error;
 
 pub fn break_lines<'a, H>(
     text: &str,
     width: i32,
     hyphenator: &'a H,
-) -> Result<Vec<String>, LinebreakError>
+) -> Vec<String>
 where
     H: Hyphenator<'a, Opportunity = usize>,
 {
@@ -73,7 +72,7 @@ where
     let line = build_line(&fragments, last, fragments.len());
     rv.push(line);
     
-    Ok(rv)
+    rv
 }
 
 fn build_line(fragments: &[Item<&str>], start: usize, end: usize) -> String {
@@ -93,16 +92,3 @@ fn build_line(fragments: &[Item<&str>], start: usize, end: usize) -> String {
     line
 }
 
-
-#[derive(Error, Debug, Clone)]
-pub enum LinebreakError {
-    #[error("Line {text} requires {required} units of space, but only {have} available")]
-    LineDoesntFit {
-        text: String,
-        required: i32, have: i32
-    },
-    #[error("No line widths provided")]
-    NoLines,
-    #[error("Too many lines: only {widths} widths available")]
-    TooManyLines { widths: usize }
-}

@@ -10,19 +10,15 @@ use tui::{
     Frame,
 };
 
-use crate::{Grid, panel::{self, PanelError}, line_splitter};
+use crate::{Gridlike, panel::{self, PanelError}, line_splitter};
+
+use self::grid::GridRenderer;
 mod grid;
 
-pub fn get_errors(grid: &Grid) -> Vec<PanelError> {
+pub fn get_errors<'a, G: Gridlike<'a>>(grid: &'a G) -> Vec<PanelError> {
     grid
-    .contents
     .iter()
-    .enumerate()
-    .flat_map(|(x, col)| {
-        col.iter()
-            .enumerate()
-            .filter_map(move |(y, panel)| panel.satisfied(x, y, grid).err())
-    })
+    .filter_map(|(x, y, panel)| panel.satisfied(x, y, grid).err())    
     .collect()
 }
 
@@ -43,6 +39,11 @@ fn render_help<B: Backend>(f: &mut Frame<B>, area: Rect, color: panel::Color, st
     help.push(Spans(vec![Span::raw("L: lines (l for -, L for /)\n")]));
     help.push(Spans(vec![Span::raw("F: Petals (flower)\n")]));
     help.push(Spans(vec![Span::raw("O: Lozange\n")]));
+    help.push(Spans(vec![Span::raw("Tab: Rotate\n")]));
+    help.push(Spans(vec![Span::raw("R: Reset\n")]));
+    help.push(Spans(vec![Span::raw("Enter: Tag panel\n")]));
+    help.push(Spans(vec![Span::raw("0..9: set panel count (where applicable)\n")]));
+    help.push(Spans(vec![Span::raw("X: Export\n")]));
     help.push(Spans(vec![]));
     help.push(Spans(vec![Span::raw(format!("Saved states: {state_stack_size}"))]));
     let para = Paragraph::new(help);
@@ -58,7 +59,7 @@ fn render_errors<'a, B: Backend, H: Hyphenator<'a, Opportunity = usize>>(f: &mut
     let mut list_items = vec![];
     for err in errors {
         let text = err.to_string();
-        let lines = line_splitter::break_lines(&text, area.width as i32 - 3, hyphenator).unwrap();
+        let lines = line_splitter::break_lines(&text, area.width as i32 - 3, hyphenator);
         let mut lines: Vec<Spans<'static>> = lines
             .into_iter()
             .map(|line| Spans(vec![Span::raw(line)]))
@@ -76,9 +77,9 @@ fn render_errors<'a, B: Backend, H: Hyphenator<'a, Opportunity = usize>>(f: &mut
     f.render_widget(list, area);
 }
 
-pub fn ui<B: Backend>(
+pub fn ui<'a, G: Gridlike<'a>, B: Backend>(
     f: &mut Frame<B>,
-    grid: &mut Grid,
+    grid: &'a mut G,
     cx: usize,
     cy: usize,
     cur_color: panel::Color,
@@ -98,7 +99,7 @@ pub fn ui<B: Backend>(
     let errors = get_errors(grid);
     let error_locs: HashSet<_> = errors.iter().map(|e| e.get_pos()).collect();
 
-    f.render_stateful_widget(&*grid, block.inner(chunks[0]), &mut (cx, cy, tagged, error_locs));
+    f.render_stateful_widget(GridRenderer::new(&*grid), block.inner(chunks[0]), &mut (cx, cy, tagged, error_locs));
     f.render_widget(block, chunks[0]);
     
     
@@ -108,7 +109,7 @@ pub fn ui<B: Backend>(
 
     let subchunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(15), Constraint::Min(30)].as_ref())
+        .constraints([Constraint::Min(16), Constraint::Min(30)].as_ref())
         .split(chunks[1]);
     render_help(f, subchunks[0], cur_color, state_stack_size);
     render_errors(f, subchunks[1], &errors, &en_us);
