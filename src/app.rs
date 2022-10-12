@@ -20,6 +20,7 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, args: Args) -> io::Result
     } else {
         Grid2::new(args.width, args.height)
     };
+    
     let mut cx = 0;
     let mut cy = 0;
     let mut tagged = HashSet::new();
@@ -89,9 +90,15 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, args: Args) -> io::Result
                 KeyCode::Char(' ') => {
                     if key.modifiers.contains(KeyModifiers::SHIFT) {
                         grid.toggle_fixed_at(cx, cy);
+                    } else if key.modifiers.contains(KeyModifiers::CONTROL) {
+                        if !grid.fixed_at(cx, cy) {
+                            grid.toggle_colit_at(cx, cy);
+                            grid.set_lit_at(cx, cy, false);
+                        }
                     } else {
                         if !grid.fixed_at(cx, cy) {
                             grid.toggle_lit_at(cx, cy);
+                            grid.set_colit_at(cx, cy, false);
                         }
                     }
                 }

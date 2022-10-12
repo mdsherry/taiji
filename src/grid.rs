@@ -4,19 +4,14 @@ use thiserror::Error;
 
 use crate::panel::{self, Panel, Symbol};
 mod solver;
+mod neighbourhood;
+pub use neighbourhood::*;
 
 #[derive(Debug, Clone)]
 pub struct Grid {
     pub width: usize,
     pub height: usize,
     contents: Vec<Vec<Panel>>,
-}
-
-pub struct Neighbourhood {
-    pub offset_x: usize,
-    pub offset_y: usize,
-
-    pub contents: Vec<(i8, i8, Panel)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -35,58 +30,6 @@ impl Rotation {
             Rotation::D180 => (-x, -y),
             Rotation::D90 => (-y, x),
         }
-    }
-}
-
-impl Neighbourhood {
-    pub fn entirely_before(&self, upto_x: usize, upto_y: usize) -> bool {
-        if (self.offset_y, self.offset_x) > (upto_y, upto_x) {
-            return false;
-        }
-        !self.contents.iter().any(|(x, y, _)| {
-            let point = (*y as usize + self.offset_y, *x as usize + self.offset_x);
-            point > (upto_y, upto_x)
-        })
-    }
-    pub fn same_shape(&self, other: &Neighbourhood) -> bool {
-        let mut mine: Vec<_> = self.contents.iter().map(|(x, y, _)| (*x, *y)).collect();
-        mine.sort_unstable();
-        let mut theirs: Vec<_> = other.contents.iter().map(|(x, y, _)| (*x, *y)).collect();
-        theirs.sort_unstable();
-        mine == theirs
-    }
-    pub fn same_shape_rotated(&self, other: &Neighbourhood) -> bool {
-        let mut mine: Vec<_> = self.contents.iter().map(|(x, y, _)| (*x, *y)).collect();
-        mine.sort_unstable();
-        for rot in ROTATIONS {
-            let mut theirs: Vec<_> = other.contents.iter().map(|(x, y, _)| rot.rotate((*x, *y))).collect();
-            theirs.sort_unstable();
-            if mine == theirs {
-                return true;
-            }
-        }
-        false
-    }
-    pub fn overlap(&self, other: &Neighbourhood) -> usize {
-        let theirs: HashSet<_> = other.contents.iter().map(|(x, y, _)| (*x, *y)).collect();
-        let mut count = 0;
-        for &(x, y, _) in &self.contents {
-            if theirs.contains(&(x, y)) {
-                count += 1;
-            }
-        }
-        count
-    }
-    pub fn rotated_overlap(&self, other: &Neighbourhood, rot: Rotation) -> usize {
-        let theirs: HashSet<_> = other.contents.iter().map(|(x, y, _)| (*x, *y)).collect();
-        let mut count = 0;
-        for &(x, y, _) in &self.contents {
-            let target = rot.rotate((x, y));
-            if theirs.contains(&target) {
-                count += 1;
-            }
-        }
-        count
     }
 }
 
@@ -233,6 +176,7 @@ fn from_str_gridlike<'a, G: Gridlike<'a>>(s: &str) -> Result<G, GridParseError> 
             let panel: Panel = token
                 .parse()
                 .map_err(|e| GridParseError::InvalidPanel { x, y, e })?;
+
             grid.set_lit_at(x, y, panel.filled);
             grid.set_fixed_at(x, y, panel.fixed);
             if panel.symbol != Symbol::Plain {
@@ -362,22 +306,32 @@ pub trait Gridlike<'a> {
     type Iter: Iterator<Item=(usize, usize, Panel)> + 'a;
     fn width(&self) -> usize;
     fn height(&self) -> usize;
+    fn panel_at(&self, x: usize, y: usize) -> Panel {
+        Panel { filled: self.lit_at(x, y), fixed: self.fixed_at(x, y), symbol: self.symbol_at(x, y).unwrap_or(Symbol::Plain) }
+    }
     fn new(width: usize, height: usize) -> Self;
     fn symbol_at(&self, x: usize, y: usize) -> Option<Symbol>;
     fn symbol_at_mut(&mut self, x: usize, y: usize) -> Option<&mut Symbol>;
     fn lit_at(&self, x: usize, y: usize) -> bool;
     fn toggle_lit_at(&mut self, x: usize, y: usize);
     fn set_lit_at(&mut self, x: usize, y: usize, lit: bool);
+
+    fn colit_at(&self, x: usize, y: usize) -> bool { false }
+    fn toggle_colit_at(&mut self, x: usize, y: usize) {}
+    fn set_colit_at(&mut self, x: usize, y: usize, lit: bool) {}
+
     fn fixed_at(&self, x: usize, y: usize) -> bool;
     fn toggle_fixed_at(&mut self, x: usize, y: usize);
     fn set_fixed_at(&mut self, x: usize, y: usize, lit: bool);
     fn neighbourhood(&self, x: usize, y: usize) -> Neighbourhood;
+    fn neighbourhood_upto(&self, x: usize, y: usize, upto_x: usize, upto_y: usize) -> Neighbourhood;
     fn reset(&mut self);
     fn set_symbol_at(&mut self, x: usize, y: usize, symbol: Symbol);
     fn is_solved(&self) -> bool;
     fn rotate(&mut self);
     fn iter(&'a self) -> Self::Iter;
     fn solve(&self) -> Option<Self> where Self: Sized;
+    fn symbols(&self) -> Vec<(usize, usize, Symbol)>;
 }
 
 const MAX_ROWS: usize = 12;
@@ -386,18 +340,39 @@ pub struct Grid2 {
     width: usize,
     height: usize,
     lit: [u16; MAX_ROWS],
+    colit: [u16; MAX_ROWS],
     fixed: [u16; MAX_ROWS],
-    symbols: Vec<(u8, u8, Symbol)>
+    symbols: Vec<(usize, usize, Symbol)>
 }
 
 impl<'a> Gridlike<'a> for Grid2 {
+    fn colit_at(&self, x: usize, y: usize) -> bool { 
+        self.colit[y] & (1 << x) != 0
+     }
+    fn toggle_colit_at(&mut self, x: usize, y: usize) {
+        self.colit[y] ^= 1 << x;
+        
+    }
+    fn set_colit_at(&mut self, x: usize, y: usize, lit: bool) {
+        if lit {
+            self.colit[y] |= 1 << x;
+            self.lit[y] &= !(1 << x);
+        } else {
+            self.colit[y] &= !(1 << x);
+        }
+    }
+
     fn new(width: usize, height: usize) -> Self {
         Self {
             width, height,
             lit: [0; MAX_ROWS],
+            colit: [0; MAX_ROWS],
             fixed: [0; MAX_ROWS],
             symbols: vec![]
         }
+    }
+    fn symbols(&self) -> Vec<(usize, usize, Symbol)> {
+        self.symbols.clone()
     }
     fn width(&self) -> usize {
         self.width
@@ -415,7 +390,7 @@ impl<'a> Gridlike<'a> for Grid2 {
 
     fn lit_at(&self, x: usize, y: usize) -> bool {
         assert!(x < self.width && y < self.height);
-        self.lit[y] & (1 << x) != 0
+        self.lit[y] & (1 << x) == (1 << x)
     }
 
     fn toggle_lit_at(&mut self, x: usize, y: usize) {
@@ -441,11 +416,11 @@ impl<'a> Gridlike<'a> for Grid2 {
         self.fixed[y] ^= 1 << x;
     }
 
-    fn set_fixed_at(&mut  self, x: usize, y: usize, lit: bool) {
-        if lit {
-            self.lit[y] |= 1 << x;
+    fn set_fixed_at(&mut  self, x: usize, y: usize, fixed: bool) {
+        if fixed {
+            self.fixed[y] |= 1 << x;
         } else {
-            self.lit[y] &= !(1 << x);
+            self.fixed[y] &= !(1 << x);
         }
     }
 
@@ -499,11 +474,68 @@ impl<'a> Gridlike<'a> for Grid2 {
         }
     }
 
+    fn neighbourhood_upto(&self, x: usize, y: usize, upto_x: usize, upto_y: usize) -> Neighbourhood {
+        if (y, x) < (upto_y, upto_x) {
+            return Neighbourhood { offset_x: x, offset_y: y, contents: vec![] }
+        }
+        let mut seen = HashSet::new();
+        seen.insert((x, y));
+        let mut to_visit = vec![(x, y)];
+        let mut neighbour_panels = vec![];
+        let target_filled = self.lit_at(x, y);
+        while let Some((vx, vy)) = to_visit.pop() {
+            if (vy, vx) > (upto_y, upto_x) && !self.fixed_at(vx, vy){
+                continue;
+            }
+            neighbour_panels.push((
+                vx as i8 - x as i8,
+                vy as i8 - y as i8,
+                Panel { 
+                    filled: self.lit_at(vx, vy),
+                    fixed: self.fixed_at(vx, vy),
+                    symbol: self.symbol_at(vx, vy).unwrap_or_default()
+                }
+            ));
+
+            if vx > 0
+                && self.lit_at(vx - 1, vy) == target_filled
+                && seen.insert((vx - 1, vy))
+            {
+                to_visit.push((vx - 1, vy));
+            }
+            if vy > 0
+                && self.lit_at(vx, vy - 1) == target_filled
+                && seen.insert((vx, vy - 1))
+            {
+                to_visit.push((vx, vy - 1));
+            }
+            if vx + 1 < self.width
+                && self.lit_at(vx + 1, vy) == target_filled
+                && seen.insert((vx + 1, vy))
+            {
+                to_visit.push((vx + 1, vy));
+            }
+            if vy + 1 < self.height
+                && self.lit_at(vx, vy + 1) == target_filled
+                && seen.insert((vx, vy + 1))
+            {
+                to_visit.push((vx, vy + 1));
+            }
+        }
+        neighbour_panels.sort_unstable_by_key(|panel| (panel.0, panel.1));
+        Neighbourhood {
+            offset_x: x,
+            offset_y: y,
+            contents: neighbour_panels,
+        }
+    }
+
+
     fn reset(&mut self) {
         let mut rv = self.clone();
         for (x, y, panel) in self.iter() {
             if !panel.fixed {
-                rv.set_fixed_at(x, y, false);
+                rv.set_lit_at(x, y, false);
             }
         }        
         *self = rv;
@@ -513,7 +545,7 @@ impl<'a> Gridlike<'a> for Grid2 {
         if let Some(s) = self.symbol_at_mut(x, y) {
             *s = symbol;
         } else {
-            self.symbols.push((x as u8, y as u8, symbol));
+            self.symbols.push((x, y, symbol));
         }
     }
 
@@ -734,6 +766,14 @@ impl<'a> Gridlike<'a> for Grid {
     }
     fn height(&self) -> usize {
         self.height
+    }
+
+    fn symbols(&self) -> Vec<(usize, usize, Symbol)> {
+        unimplemented!()
+    }
+
+    fn neighbourhood_upto(&self, x: usize, y: usize, upto_x: usize, upto_y: usize) -> Neighbourhood {
+        unimplemented!()
     }
 }
 impl  Grid {

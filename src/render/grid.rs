@@ -77,6 +77,7 @@ impl<'a, G: Gridlike<'a>> StatefulWidget for GridRenderer<'a, G> {
                     error_locs.contains(&PanelLoc { x, y }),
                     tagged.contains(&(x, y)),
                     cotagged.contains(&(x, y)),
+                    self.grid.colit_at(x, y),
                     panel,
                     rect,
                     buf,
@@ -168,8 +169,14 @@ fn get_colours(cursor: bool, error: bool, _tagged: bool, _cotagged: bool, filled
     PanelColours { border_bg, border_fg, bg: border_bg, fg: border_fg }
 }
 
-fn render_panel(cursor: bool, error: bool, tagged: bool, cotagged: bool, panel: Panel, area: Rect, buf: &mut Buffer) {
-    let colours = get_colours(cursor, error, tagged, cotagged, panel.filled);
+fn render_panel(cursor: bool, error: bool, tagged: bool, cotagged: bool, colit: bool, panel: Panel, area: Rect, buf: &mut Buffer) {
+    let mut colours = get_colours(cursor, error, tagged, cotagged, panel.filled);
+    if colit {
+        colours.border_bg = Color::Green;
+        if colours.border_fg == Color::DarkGray {
+            colours.border_fg = Color::Black;
+        }
+    }
     let block = Block::default()
         .style(
             Style::default()

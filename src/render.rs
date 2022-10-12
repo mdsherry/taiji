@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 
 use hyphenation::{Load, Hyphenator};
+use panel::COLORS;
 use tui::{
     backend::Backend,
     layout::{ Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Span, Spans},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
@@ -22,19 +23,18 @@ pub fn get_errors<'a, G: Gridlike<'a>>(grid: &'a G) -> Vec<PanelError> {
     .collect()
 }
 
-fn render_help<B: Backend>(f: &mut Frame<B>, area: Rect, color: panel::Color, state_stack_size: usize) {
+fn render_help<B: Backend>(f: &mut Frame<B>, area: Rect, state_stack_size: usize) {
     let block = Block::default().borders(Borders::ALL).title("Help");
     let inner_area = block.inner(area);
     f.render_widget(block, area);
     let area = inner_area;
 
     let mut help = vec![];
-    help.push(Spans(vec![Span::styled(
-        format!("{:?}\n", color),
-        Style::default().fg(color.to_tui()).bg(Color::DarkGray),
-    )]));
+    
     help.push(Spans(vec![Span::raw("Arrows: move\n")]));
     help.push(Spans(vec![Span::raw("Space: toggle light\n")]));
+    help.push(Spans(vec![Span::raw("Shift-space: Lock cell\n")]));
+    help.push(Spans(vec![Span::raw("Ctrl-Space: Mark as unlit\n")]));
     help.push(Spans(vec![Span::raw("C: Pips\n")]));
     help.push(Spans(vec![Span::raw("L: lines (l for -, L for /)\n")]));
     help.push(Spans(vec![Span::raw("F: Petals (flower)\n")]));
@@ -44,9 +44,10 @@ fn render_help<B: Backend>(f: &mut Frame<B>, area: Rect, color: panel::Color, st
     help.push(Spans(vec![Span::raw("Enter: Tag panel\n")]));
     help.push(Spans(vec![Span::raw("0..9: set panel count (where applicable)\n")]));
     help.push(Spans(vec![Span::raw("X: Export\n")]));
+    
     help.push(Spans(vec![]));
     help.push(Spans(vec![Span::raw(format!("Saved states: {state_stack_size}"))]));
-    let para = Paragraph::new(help);
+    let para = Paragraph::new(help).wrap(Wrap { trim: false });
     f.render_widget(para, area);
 }
 
@@ -77,6 +78,30 @@ fn render_errors<'a, B: Backend, H: Hyphenator<'a, Opportunity = usize>>(f: &mut
     f.render_widget(list, area);
 }
 
+struct ColorPicker { color: panel::Color }
+impl tui::widgets::Widget for ColorPicker {
+    fn render(self, area: Rect, buf: &mut tui::buffer::Buffer) {
+        let block = Block::default().borders(Borders::ALL).title("Colour");
+        let inner_area = block.inner(area);
+        block.render(area, buf);
+        let area = inner_area;
+        let mut color_box = area.clone();
+        let color_width = area.width / COLORS.len() as u16;
+        let padding = (area.width - (COLORS.len() as u16) * color_width) / 2;
+        
+        color_box.width = color_width;
+        color_box.x += padding;
+
+        for color in COLORS {
+            buf.set_style(color_box, Style::default().bg(color.to_tui()));
+            if color == self.color {
+                buf.set_string(color_box.left() + color_width / 2, color_box.top(), "*", Style::default().fg(color.complement().to_tui()));
+            }
+            color_box.x += color_width;
+        }
+    }
+}
+
 pub fn ui<'a, G: Gridlike<'a>, B: Backend>(
     f: &mut Frame<B>,
     grid: &'a mut G,
@@ -101,18 +126,15 @@ pub fn ui<'a, G: Gridlike<'a>, B: Backend>(
 
     f.render_stateful_widget(GridRenderer::new(&*grid), block.inner(chunks[0]), &mut (cx, cy, tagged, error_locs));
     f.render_widget(block, chunks[0]);
-    
-    
+        
     let en_us = hyphenation::Standard::from_embedded(hyphenation::Language::EnglishUS).unwrap();
-    
-    
-
     let subchunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(16), Constraint::Min(30)].as_ref())
+        .constraints([Constraint::Length(3), Constraint::Min(16), Constraint::Min(30)].as_ref())
         .split(chunks[1]);
-    render_help(f, subchunks[0], cur_color, state_stack_size);
-    render_errors(f, subchunks[1], &errors, &en_us);
+    f.render_widget(ColorPicker { color: cur_color }, subchunks[0]);
+    render_help(f, subchunks[1], state_stack_size);
+    render_errors(f, subchunks[2], &errors, &en_us);
 
 }
 

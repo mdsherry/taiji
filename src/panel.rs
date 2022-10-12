@@ -1,128 +1,7 @@
-use crate::{Gridlike, grid::PanelLoc};
+use crate::{Gridlike, grid::{PanelLoc, Neighbourhood}};
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Color {
-    #[default]
-    Black,
-    Yellow,
-    Purple,
-    White,
-    Blue,
-    Green,
-}
-
-#[allow(dead_code)]
-pub const COLORS: [Color; 6] = [Color::Black, Color::Yellow, Color::Purple, Color::White, Color:: Blue, Color::Green];
-
-impl Color {
-    pub fn code(self) -> char {
-        match self {
-            Color::Black => 'B',
-            Color::Yellow => 'Y',
-            Color::Purple => 'P',
-            Color::White => 'W',
-            Color::Blue => 'U',
-            Color::Green => 'G',
-        }
-    }
-    pub fn from_code(ch: char) -> Option<Self> {
-        Some(match ch {
-            'b' | 'B' => Color::Black,
-            'y' | 'Y' => Color::Yellow,
-            'p' | 'P' => Color::Purple,
-            'w' | 'W' => Color::White,
-            'u' | 'U' => Color::Blue,
-            'g' | 'G' => Color::Green,
-            _ => return None
-        })
-    }
-    pub fn to_tui(self) -> tui::style::Color {
-        match self {
-            Color::Black => tui::style::Color::Blue,
-            Color::Yellow => tui::style::Color::Yellow,
-            Color::Purple => tui::style::Color::LightMagenta,
-            Color::White => tui::style::Color::White,
-            Color::Blue => tui::style::Color::LightCyan,
-            Color::Green => tui::style::Color::Green,
-        }
-    }
-    pub fn next(self) -> Self {
-        match self {
-            Color::Black => Color::Yellow,
-            Color::Yellow => Color::Purple,
-            Color::Purple => Color::White,
-            Color::White => Color::Blue,
-            Color::Blue => Color::Green,
-            Color::Green => Color::Black,
-        }
-    }
-    pub fn prev(self) -> Self {
-        match self {
-            Color::Black => Color::Green,
-            Color::Yellow => Color::Black,
-            Color::Purple => Color::Yellow,
-            Color::White => Color::Purple,
-            Color::Blue => Color::White,
-            Color::Green => Color::Blue,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Symbol {
-    #[default]
-    Plain,
-    Pips {
-        count: i8,
-        color: Color,
-    },
-    Line {
-        diagonal: bool,
-        color: Color,
-    },
-    Lozange {
-        color: Color,
-    },
-    Petals {
-        count: usize,
-    },
-}
-
-impl Symbol {
-    pub fn colour(&self) -> Option<Color> {
-        match self {
-            Symbol::Plain | Symbol::Petals {..} => None,
-            Symbol::Pips { color, .. } | 
-            Symbol::Line { color, .. } |
-            Symbol::Lozange { color } => Some(*color)
-        }
-    }
-
-    pub fn set_count(&mut self, c: i8) {
-        match self {
-            Symbol::Plain | Symbol::Line { .. } | Symbol::Lozange { .. }=> (),
-            Symbol::Pips { count, .. } => *count = c,
-            Symbol::Petals { count } => *count = c.min(4).max(0) as usize,
-        }
-    }
-
-    pub fn incr_count(&mut self) {
-        match self {
-            Symbol::Plain | Symbol::Line { .. } | Symbol::Lozange { .. }=> (),
-            Symbol::Pips { count, .. } => if *count == -1 { *count = 1; } else { *count += 1; },
-            Symbol::Petals { count } => *count = (*count + 1).min(4) as usize,
-        }
-    }
-
-    pub fn decr_count(&mut self) {
-        match self {
-            Symbol::Plain | Symbol::Line { .. } | Symbol::Lozange { .. }=> (),
-            Symbol::Pips { count, .. } => if *count == 1 { *count = -1; } else { *count -= 1 },
-            Symbol::Petals { count } => *count = (*count as i32 - 1).max(0) as usize,
-        }
-    }
-}
+pub use crate::symbol::*;
 
 #[derive(Clone, Debug, Copy, Default, PartialEq, Eq)]
 pub struct Panel {
@@ -132,55 +11,66 @@ pub struct Panel {
 }
 
 impl Panel {
-    pub fn satisfiable<'a, G: Gridlike<'a>>(self, x: usize, y: usize, upto_x: usize, upto_y: usize, grid: &'a G) -> bool {
-        if (y, x) >= (upto_y, upto_x) {
+    pub fn satisfiable<'a, G: Gridlike<'a>>(self, x: usize, y: usize, upto_x: usize, upto_y: usize, grid: &'a G, debug: bool) -> bool {
+        
+        if (y, x) > (upto_y, upto_x) {
             return true;
         }
         match self.symbol {
             Symbol::Plain => true,
             Symbol::Pips { count: _, color } => {
-                let neighbourhood = grid.neighbourhood(x, y);
-                if !neighbourhood.entirely_before(upto_x, upto_y) {
-                    return true;
-                }
-                let total_pip_sum: i8 = grid.iter().filter_map(|(_, _, panel)| {
-                    if let Symbol::Pips { count, color: pcolor } = panel.symbol { 
-                        if color == pcolor { 
-                            Some(count)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }).sum();
-                if total_pip_sum != 0 && grid.lit_at(x, y) && total_pip_sum < neighbourhood.contents.len() as i8 {
-                    return false;
-                }
-                
-                // let mut pip_sum = 0;
-                // for (ox, oy, other_panel) in neighbourhood.contents.iter() {
-                //     if let Symbol::Pips {
-                //         color: other_color,
-                //         count,
-                //     } = other_panel.symbol
-                //     {
-                //         if color != other_color {
-                //             return false;
+                let neighbourhood = grid.neighbourhood_upto(x, y, upto_x, upto_y);
+
+                // let total_pip_sum: i8 = grid.iter().filter_map(|(_, _, panel)| {
+                //     if let Symbol::Pips { count, color: pcolor } = panel.symbol { 
+                //         if color == pcolor { 
+                //             Some(count)
+                //         } else {
+                //             None
                 //         }
-                //         pip_sum += count;
+                //     } else {
+                //         None
                 //     }
+                // }).sum();
+                // if total_pip_sum != 0 && total_pip_sum < neighbourhood.contents.len() as i8 {
+                //     return false;
                 // }
-                true
+                
+                let mut pip_sum = 0;
+                for (_, _, other_panel) in neighbourhood.contents.iter() {
+                    if let Symbol::Pips {
+                        color: other_color,
+                        count,
+                    } = other_panel.symbol
+                    {
+                        if color != other_color {
+                            return false;
+                        }
+                        pip_sum += count;
+                    }
+                }
+                pip_sum != 0 && pip_sum >= neighbourhood.contents.len() as i8
             }
-            Symbol::Line { .. } => {
+            Symbol::Line { diagonal, color } => {
+                let mut neighbourhood = grid.neighbourhood_upto(x, y, upto_x, upto_y);
+                for (sx, sy, symbol) in grid.symbols() {
+                    
+                    if let Symbol::Line { diagonal: odiagonal, color: ocolor } = symbol {
+                        if color != ocolor {
+                            continue;
+                        }
+                        neighbourhood.translate_to(sx, sy);
+                        let d_inbounds = (diagonal || odiagonal) && neighbourhood.inbounds_rotated(grid.width(), grid.height());
+                        if !(d_inbounds || neighbourhood.inbounds(grid.width(), grid.height())) {
+                            return false;
+                        }
+                    }
+                }
                 true
             },
             Symbol::Lozange { color } => {
-                let neighbourhood = grid.neighbourhood(x, y);
-                if !neighbourhood.entirely_before(upto_x, upto_y) {
-                    return true;
-                }
+                let neighbourhood = grid.neighbourhood_upto(x, y, upto_x, upto_y);
+                
                 let mut lozange_count = 0;
                 for (_ox, _oy, other_panel) in neighbourhood.contents.iter() {
                     match other_panel.symbol {
@@ -201,38 +91,22 @@ impl Panel {
                 lozange_count <= 2
             }
             Symbol::Petals { count } => {
-                if y + 1 < grid.height() {
-                    if upto_y < y + 1 || upto_x < x {
-                        return true
+                let mut check_area = Neighbourhood::new_around(x, y, grid);
+                check_area.constrain_to_before(upto_x, upto_y);
+                let mut definitely_on = 0;
+                let mut definitely_off = 0;
+                for (x, y, panel) in check_area.contents.iter() {
+                    if *x == 0 && *y == 0 {
+                        continue;
                     }
-                } else if x + 1 < grid.width() {
-                    if upto_y < y || upto_x < x + 1 {
-                        return true;
+                    if panel.filled == self.filled {
+                        definitely_on += 1;
+                    } else {
+                        definitely_off += 1;
                     }
-                } else {
-                    if upto_y < y || upto_x < x {
-                        return true;
-                    }
-                }
-                let mut neighbour_count = 0;
-                if x > 0 && grid.lit_at(x - 1, y) == self.filled {
-                    neighbour_count += 1;
-                }
-                if x + 1 < grid.width() && grid.lit_at(x + 1, y) == self.filled {
-                    neighbour_count += 1;
-                }
-                if y > 0 && grid.lit_at(x, y - 1) == self.filled {
-                    neighbour_count += 1;
-                }
-                if y + 1 < grid.height() && grid.lit_at(x, y + 1) == self.filled {
-                    neighbour_count += 1;
-                }
-
-                if neighbour_count == count {
-                    true
-                } else {
-                    false
-                }
+                };
+                
+                count >= definitely_on && 4 - count >= definitely_off
             },
         }
     }
@@ -405,4 +279,41 @@ impl PanelError {
             PanelError::DuplicateLineNeighbourhoodShape { pos, .. } => *pos,
         }
     }
+}
+
+
+fn debug_n<'a, G: Gridlike<'a>>(neighbourhood: &Neighbourhood, grid: &'a G) {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open("debug.log").unwrap();
+    let x_min = neighbourhood.contents.iter().map(|(x, _, _)| *x).min().unwrap_or_default();
+    let x_max = neighbourhood.contents.iter().map(|(x, _, _)| *x).max().unwrap_or_default();
+    let y_min = neighbourhood.contents.iter().map(|(_, y, _)| *y).min().unwrap_or_default();
+    let y_max = neighbourhood.contents.iter().map(|(_, y, _)| *y).max().unwrap_or_default();
+    let mut s = String::new();
+    for y  in y_min..=y_max {
+        for x in x_min..=x_max {
+            if (x, y) == (0, 0) {
+                s.push('O');
+            } else if let Some((_, _, p)) = neighbourhood.contents.iter().find(|(nx, ny, _)| *nx == x && *ny == y){
+                s.push(if p.filled {'#'} else {'.'});
+            } else {
+                s.push(' ');
+            }
+        }
+        s.push('\n');
+    }
+    write!(f, "{}\n{}", PanelLoc { x: neighbourhood.offset_x, y: neighbourhood.offset_y }, s).unwrap();
+    let mut s = String::new();
+    for y in 0..grid.height() {
+        for x in 0..grid.width() {
+            if grid.lit_at(x, y) {
+                s.push('#');
+            } else {
+                s.push('.');
+            }
+        }
+        s.push('\n');
+    }
+    write!(f, "{}\n", s).unwrap();
+    write!(f, "{:?}\n", neighbourhood).unwrap();
 }

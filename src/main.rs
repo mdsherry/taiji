@@ -18,6 +18,7 @@ mod render;
 mod grid;
 use grid::*;
 mod app;
+mod symbol;
 
 #[derive(Parser)]
 pub struct Args {
