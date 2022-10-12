@@ -316,9 +316,9 @@ pub trait Gridlike<'a> {
     fn toggle_lit_at(&mut self, x: usize, y: usize);
     fn set_lit_at(&mut self, x: usize, y: usize, lit: bool);
 
-    fn colit_at(&self, x: usize, y: usize) -> bool { false }
-    fn toggle_colit_at(&mut self, x: usize, y: usize) {}
-    fn set_colit_at(&mut self, x: usize, y: usize, lit: bool) {}
+    fn colit_at(&self, _x: usize, _y: usize) -> bool { false }
+    fn toggle_colit_at(&mut self, _x: usize, _y: usize) {}
+    fn set_colit_at(&mut self, _x: usize, _y: usize, _lit: bool) {}
 
     fn fixed_at(&self, x: usize, y: usize) -> bool;
     fn toggle_fixed_at(&mut self, x: usize, y: usize);
@@ -351,7 +351,7 @@ impl<'a> Gridlike<'a> for Grid2 {
      }
     fn toggle_colit_at(&mut self, x: usize, y: usize) {
         self.colit[y] ^= 1 << x;
-        
+
     }
     fn set_colit_at(&mut self, x: usize, y: usize, lit: bool) {
         if lit {
@@ -772,7 +772,7 @@ impl<'a> Gridlike<'a> for Grid {
         unimplemented!()
     }
 
-    fn neighbourhood_upto(&self, x: usize, y: usize, upto_x: usize, upto_y: usize) -> Neighbourhood {
+    fn neighbourhood_upto(&self, _x: usize, _y: usize, _upto_x: usize, _upto_y: usize) -> Neighbourhood {
         unimplemented!()
     }
 }

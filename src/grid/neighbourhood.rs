@@ -109,15 +109,6 @@ impl Neighbourhood {
         })
     }
 
-    pub fn entirely_before(&self, upto_x: usize, upto_y: usize) -> bool {
-        if (self.offset_y, self.offset_x) > (upto_y, upto_x) {
-            return false;
-        }
-        !self.contents.iter().any(|(x, y, _)| {
-            let point = ((*y + self.offset_y as i8) as usize, (*x + self.offset_x as i8) as usize);
-            point > (upto_y, upto_x)
-        })
-    }
     pub fn same_shape(&self, other: &Neighbourhood) -> bool {
         let mut mine: Vec<_> = self.contents.iter().map(|(x, y, _)| (*x, *y)).collect();
         mine.sort_unstable();

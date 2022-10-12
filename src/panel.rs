@@ -11,7 +11,7 @@ pub struct Panel {
 }
 
 impl Panel {
-    pub fn satisfiable<'a, G: Gridlike<'a>>(self, x: usize, y: usize, upto_x: usize, upto_y: usize, grid: &'a G, debug: bool) -> bool {
+    pub fn satisfiable<'a, G: Gridlike<'a>>(self, x: usize, y: usize, upto_x: usize, upto_y: usize, grid: &'a G) -> bool {
         
         if (y, x) > (upto_y, upto_x) {
             return true;
@@ -21,21 +21,6 @@ impl Panel {
             Symbol::Pips { count: _, color } => {
                 let neighbourhood = grid.neighbourhood_upto(x, y, upto_x, upto_y);
 
-                // let total_pip_sum: i8 = grid.iter().filter_map(|(_, _, panel)| {
-                //     if let Symbol::Pips { count, color: pcolor } = panel.symbol { 
-                //         if color == pcolor { 
-                //             Some(count)
-                //         } else {
-                //             None
-                //         }
-                //     } else {
-                //         None
-                //     }
-                // }).sum();
-                // if total_pip_sum != 0 && total_pip_sum < neighbourhood.contents.len() as i8 {
-                //     return false;
-                // }
-                
                 let mut pip_sum = 0;
                 for (_, _, other_panel) in neighbourhood.contents.iter() {
                     if let Symbol::Pips {

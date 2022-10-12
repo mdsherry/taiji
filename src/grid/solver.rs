@@ -36,7 +36,7 @@ impl Grid {
     }
     fn solveable(&self, upto_x: usize, upto_y: usize) -> bool {
         for (x, y, panel) in self.iter() {
-            if !panel.satisfiable(x, y, upto_x, upto_y, self, false) {
+            if !panel.satisfiable(x, y, upto_x, upto_y, self) {
                 return false;
             }
         }
@@ -52,7 +52,7 @@ impl Grid2 {
             return Some(self.clone());
         }
         if x > 0 {
-            if !self.solveable(x - 1, y, y == self.height() - 1) {
+            if !self.solveable(x - 1, y) {
                 return None;
             }
         }
@@ -86,9 +86,9 @@ impl Grid2 {
             None
         }
     }
-    fn solveable(&self, upto_x: usize, upto_y: usize, debug: bool) -> bool {
+    fn solveable(&self, upto_x: usize, upto_y: usize) -> bool {
         for (x, y, panel) in self.iter() {
-            if !panel.satisfiable(x, y, upto_x, upto_y, self, debug) {
+            if !panel.satisfiable(x, y, upto_x, upto_y, self) {
                 return false;
             }
         }
