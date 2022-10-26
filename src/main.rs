@@ -7,15 +7,12 @@ use crossterm::{
 };
 
 use std::{error::Error, io, path::PathBuf};
-use tui::{
-    backend::{CrosstermBackend},
-    Terminal,
-};
+use tui::{backend::CrosstermBackend, Terminal};
 
+mod grid;
 mod line_splitter;
 mod panel;
 mod render;
-mod grid;
 use grid::*;
 mod app;
 mod symbol;

@@ -8,31 +8,30 @@ use tui::{
 };
 
 use crate::{
+    grid::PanelLoc,
     panel::{self, Panel, Symbol},
-    Gridlike, ROTATIONS, grid::PanelLoc,
+    Gridlike, ROTATIONS,
 };
 
 pub struct GridRenderer<'a, G> {
-    grid: &'a G
+    grid: &'a G,
 }
 
-impl<'a, G> GridRenderer<'a, G> where G: Gridlike<'a> {
+impl<'a, G> GridRenderer<'a, G>
+where
+    G: Gridlike<'a>,
+{
     pub fn new(grid: &'a G) -> Self {
         GridRenderer { grid }
     }
 }
 
 impl<'a, G: Gridlike<'a>> StatefulWidget for GridRenderer<'a, G> {
-    fn render(
-        self,
-        area: Rect,
-        buf: &mut Buffer,
-        (cx, cy, tagged, error_locs): &mut Self::State,
-    ) {
+    fn render(self, area: Rect, buf: &mut Buffer, (cx, cy, tagged, error_locs): &mut Self::State) {
         if area.area() == 0 {
             return;
         }
-        
+
         let panels_visible_wide = (area.width - 1) / PANEL_WIDTH;
         let panels_visible_high = (area.height - 1) / PANEL_WIDTH;
         let start_x = if panels_visible_wide < self.grid.width() as u16 {
@@ -40,7 +39,7 @@ impl<'a, G: Gridlike<'a>> StatefulWidget for GridRenderer<'a, G> {
         } else {
             0
         };
-        
+
         let start_y = if panels_visible_high < self.grid.height() as u16 {
             cy.saturating_sub((panels_visible_high / 2) as usize)
         } else {
@@ -48,19 +47,27 @@ impl<'a, G: Gridlike<'a>> StatefulWidget for GridRenderer<'a, G> {
         };
         let cotagged = get_cotagged(self.grid, tagged);
         for x in (start_x as u16)..self.grid.width() as u16 {
-            if x - start_x as u16 >= panels_visible_wide { 
+            if x - start_x as u16 >= panels_visible_wide {
                 break;
             }
-            buf.get_mut(1 + (x - start_x as u16) * PANEL_WIDTH + area.left() + PANEL_WIDTH / 2, area.top()).symbol = (x + 1).to_string();
+            buf.get_mut(
+                1 + (x - start_x as u16) * PANEL_WIDTH + area.left() + PANEL_WIDTH / 2,
+                area.top(),
+            )
+            .symbol = (x + 1).to_string();
         }
-        
+
         for y in (start_y as u16)..self.grid.height() as u16 {
-            if y - start_y as u16 >= panels_visible_high { 
+            if y - start_y as u16 >= panels_visible_high {
                 break;
             }
-            buf.get_mut(area.left(), 1 + (y - start_y as u16) * PANEL_HEIGHT + area.top() + PANEL_HEIGHT / 2).symbol = ((b'A' + y as u8) as char).to_string();
+            buf.get_mut(
+                area.left(),
+                1 + (y - start_y as u16) * PANEL_HEIGHT + area.top() + PANEL_HEIGHT / 2,
+            )
+            .symbol = ((b'A' + y as u8) as char).to_string();
         }
-        
+
         for (x, y, panel) in self.grid.iter() {
             if x < start_x || y < start_y {
                 continue;
@@ -86,23 +93,18 @@ impl<'a, G: Gridlike<'a>> StatefulWidget for GridRenderer<'a, G> {
         }
     }
 
-    type State = (
-        usize,
-        usize,
-        HashSet<(usize, usize)>,
-        HashSet<PanelLoc>,
-    );
+    type State = (usize, usize, HashSet<(usize, usize)>, HashSet<PanelLoc>);
 }
 
-
-fn get_cotagged<'a, G: Gridlike<'a>>(grid: &'a G, tagged: &mut HashSet<(usize, usize)>) -> Vec<(usize, usize)> {
+fn get_cotagged<'a, G: Gridlike<'a>>(
+    grid: &'a G,
+    tagged: &mut HashSet<(usize, usize)>,
+) -> Vec<(usize, usize)> {
     let mut cotagged = vec![];
     for &(tx, ty) in tagged.iter() {
         let tagged_neighbourhood = grid.neighbourhood(tx, ty);
-        for (ox, oy, panel) in tagged_neighbourhood.contents {
+        for (lx, ly, panel) in tagged_neighbourhood.grid_iter() {
             if let Symbol::Line { diagonal, color } = panel.symbol {
-                let lx = (ox + tagged_neighbourhood.offset_x as i8) as usize;
-                let ly = (oy + tagged_neighbourhood.offset_y as i8) as usize;
                 // Find every other line of the same colour, and tag the corresponding location
                 let l_neigh = grid.neighbourhood(lx, ly);
                 let rx = tx as i32 - lx as i32;
@@ -111,25 +113,40 @@ fn get_cotagged<'a, G: Gridlike<'a>>(grid: &'a G, tagged: &mut HashSet<(usize, u
                     if xx == lx && yy == ly {
                         continue;
                     }
-                    if let Symbol::Line { diagonal: odiagonal, color: ocolor } = opanel.symbol {
+                    if let Symbol::Line {
+                        diagonal: odiagonal,
+                        color: ocolor,
+                    } = opanel.symbol
+                    {
                         if color != ocolor {
                             continue;
                         }
                         if diagonal || odiagonal {
                             // Find the most likely rotation
                             let oneigh = grid.neighbourhood(xx, yy);
-                            let rot = ROTATIONS.into_iter().max_by_key(|rot| l_neigh.rotated_overlap(&oneigh, *rot)).unwrap();
-                    
+                            let rot = ROTATIONS
+                                .into_iter()
+                                .max_by_key(|rot| l_neigh.rotated_overlap(&oneigh, *rot))
+                                .unwrap();
+
                             let (rx, ry) = rot.rotate((rx as i8, ry as i8));
                             let olx = xx as i32 + rx as i32;
                             let oly = yy as i32 + ry as i32;
-                            if olx >= 0 && olx < grid.width() as i32 && oly >= 0 && oly < grid.height() as i32 {
+                            if olx >= 0
+                                && olx < grid.width() as i32
+                                && oly >= 0
+                                && oly < grid.height() as i32
+                            {
                                 cotagged.push((olx as usize, oly as usize));
                             }
                         } else {
                             let olx = xx as i32 + rx;
                             let oly = yy as i32 + ry;
-                            if olx >= 0 && olx < grid.width() as i32 && oly >= 0 && oly < grid.height() as i32 {
+                            if olx >= 0
+                                && olx < grid.width() as i32
+                                && oly >= 0
+                                && oly < grid.height() as i32
+                            {
                                 cotagged.push((olx as usize, oly as usize));
                             }
                         }
@@ -141,7 +158,6 @@ fn get_cotagged<'a, G: Gridlike<'a>>(grid: &'a G, tagged: &mut HashSet<(usize, u
     cotagged
 }
 
-
 const PANEL_WIDTH: u16 = 5;
 const PANEL_HEIGHT: u16 = 5;
 
@@ -149,10 +165,16 @@ struct PanelColours {
     border_bg: Color,
     border_fg: Color,
     bg: Color,
-    fg: Color
+    fg: Color,
 }
 
-fn get_colours(cursor: bool, error: bool, _tagged: bool, _cotagged: bool, filled: bool) -> PanelColours {
+fn get_colours(
+    cursor: bool,
+    error: bool,
+    _tagged: bool,
+    _cotagged: bool,
+    filled: bool,
+) -> PanelColours {
     let border_bg = match (filled, cursor) {
         (true, true) => Color::DarkGray,
         (true, false) => Color::DarkGray,
@@ -166,10 +188,24 @@ fn get_colours(cursor: bool, error: bool, _tagged: bool, _cotagged: bool, filled
         (_, false, true) => Color::Gray,
         (_, false, false) => Color::DarkGray,
     };
-    PanelColours { border_bg, border_fg, bg: border_bg, fg: border_fg }
+    PanelColours {
+        border_bg,
+        border_fg,
+        bg: border_bg,
+        fg: border_fg,
+    }
 }
 
-fn render_panel(cursor: bool, error: bool, tagged: bool, cotagged: bool, colit: bool, panel: Panel, area: Rect, buf: &mut Buffer) {
+fn render_panel(
+    cursor: bool,
+    error: bool,
+    tagged: bool,
+    cotagged: bool,
+    colit: bool,
+    panel: Panel,
+    area: Rect,
+    buf: &mut Buffer,
+) {
     let mut colours = get_colours(cursor, error, tagged, cotagged, panel.filled);
     if colit {
         colours.border_bg = Color::Green;
@@ -205,16 +241,22 @@ fn render_panel(cursor: bool, error: bool, tagged: bool, cotagged: bool, colit: 
                 }),
         );
     block.render(area, buf);
-    
+
     if cotagged {
-        buf.get_mut(area.left() + PANEL_WIDTH / 2, area.top()).set_char('v');
-        buf.get_mut(area.left() + PANEL_WIDTH / 2 - 1, area.top()).set_char('v');
-        buf.get_mut(area.left() + PANEL_WIDTH / 2 + 1, area.top()).set_char('v');
+        buf.get_mut(area.left() + PANEL_WIDTH / 2, area.top())
+            .set_char('v');
+        buf.get_mut(area.left() + PANEL_WIDTH / 2 - 1, area.top())
+            .set_char('v');
+        buf.get_mut(area.left() + PANEL_WIDTH / 2 + 1, area.top())
+            .set_char('v');
     }
     if tagged {
-        buf.get_mut(area.left() + PANEL_WIDTH / 2, area.top()).set_char('V');
-        buf.get_mut(area.left() + PANEL_WIDTH / 2 - 1, area.top()).set_char('V');
-        buf.get_mut(area.left() + PANEL_WIDTH / 2 + 1, area.top()).set_char('V');
+        buf.get_mut(area.left() + PANEL_WIDTH / 2, area.top())
+            .set_char('V');
+        buf.get_mut(area.left() + PANEL_WIDTH / 2 - 1, area.top())
+            .set_char('V');
+        buf.get_mut(area.left() + PANEL_WIDTH / 2 + 1, area.top())
+            .set_char('V');
     }
     let cell = buf.get_mut(area.left() + PANEL_WIDTH / 2, area.top() + PANEL_HEIGHT / 2);
 

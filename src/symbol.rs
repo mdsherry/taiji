@@ -1,4 +1,3 @@
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Color {
     #[default]
@@ -11,7 +10,14 @@ pub enum Color {
 }
 
 #[allow(dead_code)]
-pub const COLORS: [Color; 6] = [Color::Black, Color::Yellow, Color::Purple, Color::White, Color:: Blue, Color::Green];
+pub const COLORS: [Color; 6] = [
+    Color::Black,
+    Color::Yellow,
+    Color::Purple,
+    Color::White,
+    Color::Blue,
+    Color::Green,
+];
 
 impl Color {
     pub fn complement(self) -> Self {
@@ -42,7 +48,7 @@ impl Color {
             'w' | 'W' => Color::White,
             'u' | 'U' => Color::Blue,
             'g' | 'G' => Color::Green,
-            _ => return None
+            _ => return None,
         })
     }
     pub fn to_tui(self) -> tui::style::Color {
@@ -100,16 +106,16 @@ pub enum Symbol {
 impl Symbol {
     pub fn colour(&self) -> Option<Color> {
         match self {
-            Symbol::Plain | Symbol::Petals {..} => None,
-            Symbol::Pips { color, .. } | 
-            Symbol::Line { color, .. } |
-            Symbol::Lozange { color } => Some(*color)
+            Symbol::Plain | Symbol::Petals { .. } => None,
+            Symbol::Pips { color, .. } | Symbol::Line { color, .. } | Symbol::Lozange { color } => {
+                Some(*color)
+            }
         }
     }
 
     pub fn set_count(&mut self, c: i8) {
         match self {
-            Symbol::Plain | Symbol::Line { .. } | Symbol::Lozange { .. }=> (),
+            Symbol::Plain | Symbol::Line { .. } | Symbol::Lozange { .. } => (),
             Symbol::Pips { count, .. } => *count = c,
             Symbol::Petals { count } => *count = c.min(4).max(0) as usize,
         }
@@ -117,16 +123,28 @@ impl Symbol {
 
     pub fn incr_count(&mut self) {
         match self {
-            Symbol::Plain | Symbol::Line { .. } | Symbol::Lozange { .. }=> (),
-            Symbol::Pips { count, .. } => if *count == -1 { *count = 1; } else { *count += 1; },
+            Symbol::Plain | Symbol::Line { .. } | Symbol::Lozange { .. } => (),
+            Symbol::Pips { count, .. } => {
+                if *count == -1 {
+                    *count = 1;
+                } else {
+                    *count += 1;
+                }
+            }
             Symbol::Petals { count } => *count = (*count + 1).min(4) as usize,
         }
     }
 
     pub fn decr_count(&mut self) {
         match self {
-            Symbol::Plain | Symbol::Line { .. } | Symbol::Lozange { .. }=> (),
-            Symbol::Pips { count, .. } => if *count == 1 { *count = -1; } else { *count -= 1 },
+            Symbol::Plain | Symbol::Line { .. } | Symbol::Lozange { .. } => (),
+            Symbol::Pips { count, .. } => {
+                if *count == 1 {
+                    *count = -1;
+                } else {
+                    *count -= 1
+                }
+            }
             Symbol::Petals { count } => *count = (*count as i32 - 1).max(0) as usize,
         }
     }

@@ -1,4 +1,7 @@
-use crate::{Gridlike, grid::{PanelLoc, Neighbourhood}};
+use crate::{
+    grid::{Neighbourhood, PanelLoc},
+    Gridlike,
+};
 use thiserror::Error;
 
 pub use crate::symbol::*;
@@ -11,8 +14,14 @@ pub struct Panel {
 }
 
 impl Panel {
-    pub fn satisfiable<'a, G: Gridlike<'a>>(self, x: usize, y: usize, upto_x: usize, upto_y: usize, grid: &'a G) -> bool {
-        
+    pub fn satisfiable<'a, G: Gridlike<'a>>(
+        self,
+        x: usize,
+        y: usize,
+        upto_x: usize,
+        upto_y: usize,
+        grid: &'a G,
+    ) -> bool {
         if (y, x) > (upto_y, upto_x) {
             return true;
         }
@@ -39,40 +48,50 @@ impl Panel {
             Symbol::Line { diagonal, color } => {
                 let mut neighbourhood = grid.neighbourhood_upto(x, y, upto_x, upto_y);
                 for (sx, sy, symbol) in grid.symbols() {
-                    
-                    if let Symbol::Line { diagonal: odiagonal, color: ocolor } = symbol {
+                    if let Symbol::Line {
+                        diagonal: odiagonal,
+                        color: ocolor,
+                    } = symbol
+                    {
                         if color != ocolor {
                             continue;
                         }
                         neighbourhood.translate_to(sx, sy);
-                        let d_inbounds = (diagonal || odiagonal) && neighbourhood.inbounds_rotated(grid.width(), grid.height());
+                        let d_inbounds = (diagonal || odiagonal)
+                            && neighbourhood.inbounds_rotated(grid.width(), grid.height());
                         if !(d_inbounds || neighbourhood.inbounds(grid.width(), grid.height())) {
                             return false;
                         }
                     }
                 }
                 true
-            },
+            }
             Symbol::Lozange { color } => {
                 let neighbourhood = grid.neighbourhood_upto(x, y, upto_x, upto_y);
-                
+
                 let mut lozange_count = 0;
                 for (_ox, _oy, other_panel) in neighbourhood.contents.iter() {
                     match other_panel.symbol {
-                        Symbol::Pips { color: other_color, .. } if color == other_color => lozange_count += 1,
-                        Symbol::Line { color: other_color, ..} if color == other_color => lozange_count += 1,
-                        Symbol::Lozange { color: other_color, ..} if color == other_color => lozange_count += 1,
+                        Symbol::Pips {
+                            color: other_color, ..
+                        } if color == other_color => lozange_count += 1,
+                        Symbol::Line {
+                            color: other_color, ..
+                        } if color == other_color => lozange_count += 1,
+                        Symbol::Lozange {
+                            color: other_color, ..
+                        } if color == other_color => lozange_count += 1,
                         Symbol::Petals { count: petal_count } => {
                             if color == Color::Yellow && petal_count != 0 {
                                 lozange_count += 1;
                             } else if color == Color::Purple && petal_count != 4 {
                                 lozange_count += 1;
                             }
-                        },
-                        _ => ()
+                        }
+                        _ => (),
                     }
                 }
-                
+
                 lozange_count <= 2
             }
             Symbol::Petals { count } => {
@@ -89,14 +108,19 @@ impl Panel {
                     } else {
                         definitely_off += 1;
                     }
-                };
-                
+                }
+
                 count >= definitely_on && 4 - count >= definitely_off
-            },
+            }
         }
     }
 
-    pub fn satisfied<'a>(self, x: usize, y: usize, grid: &'a impl Gridlike<'a>) -> Result<(), PanelError> {
+    pub fn satisfied<'a>(
+        self,
+        x: usize,
+        y: usize,
+        grid: &'a impl Gridlike<'a>,
+    ) -> Result<(), PanelError> {
         match self.symbol {
             Symbol::Plain => Ok(()),
             Symbol::Pips { count: _, color } => {
@@ -110,8 +134,11 @@ impl Panel {
                     {
                         if color != other_color {
                             return Err(PanelError::OverlappingPips {
-                                pos: PanelLoc { x, y }, 
-                                other_pos: PanelLoc {x: (x as i8 + ox) as _, y: (y as i8 + oy) as _ },
+                                pos: PanelLoc { x, y },
+                                other_pos: PanelLoc {
+                                    x: (x as i8 + ox) as _,
+                                    y: (y as i8 + oy) as _,
+                                },
                                 color,
                                 other_color,
                             });
@@ -134,55 +161,68 @@ impl Panel {
             }
             Symbol::Line { diagonal, color } => {
                 let my_neighbourhood = grid.neighbourhood(x, y);
-                
+
                 // Get all other neighbourhoods of the same color
                 for (cx, cy, panel) in grid.iter() {
                     if cx == x && cy == y {
                         continue;
                     }
-                    if let Symbol::Line { diagonal: other_diagonal, color: other_color } = panel.symbol {
+                    if let Symbol::Line {
+                        diagonal: other_diagonal,
+                        color: other_color,
+                    } = panel.symbol
+                    {
                         let other_neighbourhood = grid.neighbourhood(cx, cy);
                         let shape_matches = if diagonal || other_diagonal {
                             my_neighbourhood.same_shape_rotated(&other_neighbourhood)
                         } else {
-                             my_neighbourhood.same_shape(&other_neighbourhood)
+                            my_neighbourhood.same_shape(&other_neighbourhood)
                         };
                         if color == other_color {
                             if !shape_matches {
                                 return Err(PanelError::LineNeighbourhoodWrongShape {
-                                    pos: PanelLoc { x, y }, other_pos: PanelLoc {x: cx, y: cy }
+                                    pos: PanelLoc { x, y },
+                                    other_pos: PanelLoc { x: cx, y: cy },
                                 });
                             }
                         } else {
                             if shape_matches {
                                 return Err(PanelError::DuplicateLineNeighbourhoodShape {
-                                    pos: PanelLoc { x, y }, other_pos: PanelLoc {x: cx, y: cy }
+                                    pos: PanelLoc { x, y },
+                                    other_pos: PanelLoc { x: cx, y: cy },
                                 });
                             }
                         }
                     }
                 }
-            
+
                 Ok(())
-            },
+            }
             Symbol::Lozange { color } => {
                 let neighbourhood = grid.neighbourhood(x, y);
                 let mut lozange_count = 0;
-                for (_ox, _oy, other_panel) in neighbourhood.contents.iter() {
-                    
+                for (_, _, other_panel) in neighbourhood.contents.iter() {
                     match other_panel.symbol {
                         Symbol::Petals { count: petal_count } => {
-                            if color == Color::Yellow && petal_count != 0{
+                            if color == Color::Yellow && petal_count != 0 {
                                 lozange_count += 1;
-                            } else if color == Color::Purple && petal_count != 4{
+                            } else if color == Color::Purple && petal_count != 4 {
                                 lozange_count += 1;
                             }
-                        },
-                        _ => if other_panel.symbol.colour() == Some(color) { lozange_count += 1 }
+                        }
+                        _ => {
+                            if other_panel.symbol.colour() == Some(color) {
+                                lozange_count += 1
+                            }
+                        }
                     }
                 }
                 if lozange_count != 2 {
-                    Err(PanelError::LozangeCount { pos: PanelLoc { x, y }, saw: lozange_count as i32, color })
+                    Err(PanelError::LozangeCount {
+                        pos: PanelLoc { x, y },
+                        saw: lozange_count as i32,
+                        color,
+                    })
                 } else {
                     Ok(())
                 }
@@ -205,9 +245,13 @@ impl Panel {
                 if neighbour_count == count {
                     Ok(())
                 } else {
-                    Err(PanelError::PetalCount { pos: PanelLoc { x, y }, saw: neighbour_count, required: count })
+                    Err(PanelError::PetalCount {
+                        pos: PanelLoc { x, y },
+                        saw: neighbour_count,
+                        required: count,
+                    })
                 }
-            },
+            }
         }
     }
 }
@@ -242,15 +286,9 @@ pub enum PanelError {
         color: Color,
     },
     #[error("Neighbourhood for line at {pos} was wrong shape. Conflicting line at {other_pos}")]
-    LineNeighbourhoodWrongShape {
-        pos: PanelLoc,
-        other_pos: PanelLoc,
-    },
+    LineNeighbourhoodWrongShape { pos: PanelLoc, other_pos: PanelLoc },
     #[error("Neighbourhood for line at {pos} matches line of a different colour at {other_pos}")]
-    DuplicateLineNeighbourhoodShape {
-        pos: PanelLoc,
-        other_pos: PanelLoc,
-    },
+    DuplicateLineNeighbourhoodShape { pos: PanelLoc, other_pos: PanelLoc },
 }
 
 impl PanelError {
@@ -264,41 +302,4 @@ impl PanelError {
             PanelError::DuplicateLineNeighbourhoodShape { pos, .. } => *pos,
         }
     }
-}
-
-
-fn debug_n<'a, G: Gridlike<'a>>(neighbourhood: &Neighbourhood, grid: &'a G) {
-    use std::io::Write;
-    let mut f = std::fs::OpenOptions::new().create(true).append(true).open("debug.log").unwrap();
-    let x_min = neighbourhood.contents.iter().map(|(x, _, _)| *x).min().unwrap_or_default();
-    let x_max = neighbourhood.contents.iter().map(|(x, _, _)| *x).max().unwrap_or_default();
-    let y_min = neighbourhood.contents.iter().map(|(_, y, _)| *y).min().unwrap_or_default();
-    let y_max = neighbourhood.contents.iter().map(|(_, y, _)| *y).max().unwrap_or_default();
-    let mut s = String::new();
-    for y  in y_min..=y_max {
-        for x in x_min..=x_max {
-            if (x, y) == (0, 0) {
-                s.push('O');
-            } else if let Some((_, _, p)) = neighbourhood.contents.iter().find(|(nx, ny, _)| *nx == x && *ny == y){
-                s.push(if p.filled {'#'} else {'.'});
-            } else {
-                s.push(' ');
-            }
-        }
-        s.push('\n');
-    }
-    write!(f, "{}\n{}", PanelLoc { x: neighbourhood.offset_x, y: neighbourhood.offset_y }, s).unwrap();
-    let mut s = String::new();
-    for y in 0..grid.height() {
-        for x in 0..grid.width() {
-            if grid.lit_at(x, y) {
-                s.push('#');
-            } else {
-                s.push('.');
-            }
-        }
-        s.push('\n');
-    }
-    write!(f, "{}\n", s).unwrap();
-    write!(f, "{:?}\n", neighbourhood).unwrap();
 }

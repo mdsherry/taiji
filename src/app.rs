@@ -1,13 +1,10 @@
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 
-use std::{
-    collections::HashSet,
-    io,
-};
+use std::{collections::HashSet, io};
 use tui::{backend::Backend, Terminal};
 
 use crate::{
-    grid::{Grid2, Gridlike},
+    grid::{Grid, Gridlike},
     panel::{self, Symbol},
     render::ui,
     Args,
@@ -18,9 +15,9 @@ pub fn run_app<B: Backend>(terminal: &mut Terminal<B>, args: Args) -> io::Result
         let s = std::fs::read_to_string(in_path)?;
         s.parse().unwrap()
     } else {
-        Grid2::new(args.width, args.height)
+        Grid::new(args.width, args.height)
     };
-    
+
     let mut cx = 0;
     let mut cy = 0;
     let mut tagged = HashSet::new();
