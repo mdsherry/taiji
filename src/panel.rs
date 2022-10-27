@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 use crate::{
     grid::{Neighbourhood, PanelLoc},
     Gridlike,
@@ -28,7 +31,34 @@ impl Panel {
         match self.symbol {
             Symbol::Plain => true,
             Symbol::Pips { count: _, color } => {
+                // Pips are unsatisfiable if
+                //   a) they're sharing space with another pip of a different colour
+                //   b) the neighbourhood is too large to ever pay off (unless pips all add up to 0)
                 let neighbourhood = grid.neighbourhood_upto(x, y, upto_x, upto_y);
+
+                let accessible_pips: Vec<_> = grid
+                    .symbols()
+                    .iter()
+                    .filter_map(|(x, y, symbol)| 
+                    if neighbourhood.contains(*x, *y) {
+                        None
+                    } else {
+                        match symbol {
+                            Symbol::Pips {
+                                count,
+                                color: ocolor,
+                            } if color == *ocolor
+                                && ((*y, *x) > (upto_y, upto_x)
+                                    || grid.lit_at(*x, *y) == self.filled) =>
+                            {
+                                Some(*count)
+                            }
+                            _ => None,
+                        }
+                    })
+                    .collect();
+                let max_accessible_pips: i8 = accessible_pips.iter().copied().map(|n| n.max(0)).sum();
+                let min_accessible_pips: i8 = accessible_pips.iter().copied().map(|n| n.min(0)).sum();
 
                 let mut pip_sum = 0;
                 for (_, _, other_panel) in neighbourhood.contents.iter() {
@@ -43,7 +73,8 @@ impl Panel {
                         pip_sum += count;
                     }
                 }
-                pip_sum != 0 && pip_sum >= neighbourhood.contents.len() as i8
+                
+                max_accessible_pips + pip_sum >= neighbourhood.contents.len() as i8 || min_accessible_pips + pip_sum <= 0
             }
             Symbol::Line { diagonal, color } => {
                 let mut neighbourhood = grid.neighbourhood_upto(x, y, upto_x, upto_y);
@@ -109,7 +140,6 @@ impl Panel {
                         definitely_off += 1;
                     }
                 }
-
                 count >= definitely_on && 4 - count >= definitely_off
             }
         }

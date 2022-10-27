@@ -503,7 +503,7 @@ impl<'a> Gridlike<'a> for Grid {
         upto_x: usize,
         upto_y: usize,
     ) -> Neighbourhood {
-        if (y, x) < (upto_y, upto_x) {
+        if (y, x) > (upto_y, upto_x) {
             return Neighbourhood {
                 offset_x: x,
                 offset_y: y,
@@ -567,6 +567,9 @@ impl<'a> Gridlike<'a> for Grid {
     }
 
     fn set_symbol_at(&mut self, x: usize, y: usize, symbol: Symbol) {
+        if symbol == Symbol::Plain {
+            self.symbols.retain(|(xx, yy, _)| *xx != x || *yy != y);
+        }
         if let Some(s) = self.symbol_at_mut(x, y) {
             *s = symbol;
         } else {

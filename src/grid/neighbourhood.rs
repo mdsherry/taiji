@@ -68,6 +68,14 @@ impl Neighbourhood {
             idx: 0,
         }
     }
+    
+    /// Does the neighbourhood contain a given point (in grid coordinates)?
+    pub fn contains(&self, x: usize, y: usize) -> bool {
+        let x = x as i8 - self.offset_x as i8;
+        let y = y as i8 - self.offset_y as i8;
+        self.contents.iter().any(|(xx, yy, _)| *xx == x && *yy == y)
+    }
+
     /// Returns whether all points in the neighbourhood are in-bounds on a grid with the given width and height
     pub fn inbounds(&self, width: usize, height: usize) -> bool {
         self.contents.iter().all(|(x, y, _)| {
